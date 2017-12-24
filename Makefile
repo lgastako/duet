@@ -13,6 +13,9 @@ dist-clean:
 hlint:
 	stack exec hlint .
 
+run:
+	stack exec duet $(STACK_ARGS) -- $(ARGS)
+
 setup:
 	stack setup
 
