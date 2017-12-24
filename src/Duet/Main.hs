@@ -1,12 +1,10 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-module Duet
-    ( someFunc
+module Duet.Main
+    ( main
     ) where
 
-import Duet.Prelude
+import Duet.Interpreter ( interpret )
+import Focus.Prelude
 
 main :: IO ()
 main = interact interpret
-
-interpret :: ()
-interpret = undefined

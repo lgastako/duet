@@ -1,8 +1,5 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-module Main where
+module Main ( main)  where
 
-import Focus.Prelude
-import Lib
+import Duet.Main ( main )
 
-main :: IO ()
-main = someFunc
