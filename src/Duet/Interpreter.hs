@@ -6,29 +6,28 @@
 {-# LANGUAGE OverloadedStrings     #-}
 module Duet.Interpreter
     ( interpret
+    , interpret1
     ) where
-
--- TODO: get rid of "hiding log"
 
 import qualified Data.Map.Strict  as Map
 import qualified Data.Text        as Text
-import           Duet.Instruction                ( Instruction( Add
-                                                              , Jgz
-                                                              , Mod
-                                                              , Mul
-                                                              , Rcv
-                                                              , Set
-                                                              , Snd
-                                                              )
-                                                 , parse
-                                                 )
-import           Duet.Prelude             hiding ( log )
-import           Duet.Reference                  ( Reference( RegisterRef
-                                                            , ValueRef
-                                                            )
-                                                 )
-import           Duet.RegisterId                 ( RegisterId )
-import           Duet.Value                      ( Value( Value ) )
+import           Duet.Instruction         ( Instruction( Add
+                                                       , Jgz
+                                                       , Mod
+                                                       , Mul
+                                                       , Rcv
+                                                       , Set
+                                                       , Snd
+                                                       )
+                                          , parse
+                                          )
+import           Duet.Prelude
+import           Duet.Reference           ( Reference( RegisterRef
+                                                     , ValueRef
+                                                     )
+                                          )
+import           Duet.RegisterId          ( RegisterId )
+import           Duet.Value               ( Value( Value ) )
 
 data InterpreterState = InterpreterState
   { lastSound          :: Maybe Value
@@ -38,16 +37,12 @@ data InterpreterState = InterpreterState
   , terminated         :: Bool
   } deriving (Eq, Ord, Read, Show)
 
--- interpret :: Text -> Text
--- interpret s = run instructions'
---   where
---     run = execute
---     -- run           = show . execute
---     -- TODO: catMaybes is questionable here... really should assert that they all parse?
---     instructions' = catMaybes . map parse . Text.lines $ s
-
--- TODO: replace me with the regular (show . execute) version above
---execute :: [Instruction] -> (Maybe Value, InterpreterState)
+interpret1 :: Text -> Text
+interpret1 s = run instructions'
+  where
+    run           = show . execute1
+    -- TODO: catMaybes is questionable here... really should assert that they all parse?
+    instructions' = catMaybes . map parse . Text.lines $ s
 
 interpret :: Text -> IO Text
 interpret s = execute instructions'
@@ -61,11 +56,11 @@ execute ins = do
   (val, _) <- execute' ins
   return . show $ val
 
-execute' :: MonadIO m => [Instruction] -> m (Maybe Value, InterpreterState)
+execute' :: Monad m => [Instruction] -> m (Maybe Value, InterpreterState)
 execute' ins = runStateT executeAll $ (fromInstructions ins)
 
--- execute :: [Instruction] -> Maybe Value
--- execute instructions' = fst . runStateT executeAll $ (fromInstructions instructions')
+execute1 :: [Instruction] -> Maybe Value
+execute1 instructions' = fst . runStateT executeAll $ (fromInstructions instructions')
 
 fromInstructions :: [Instruction] -> InterpreterState
 fromInstructions instructions' = InterpreterState
@@ -76,7 +71,7 @@ fromInstructions instructions' = InterpreterState
   , terminated         = False
   }
 
-executeAll :: MonadIO m => StateT InterpreterState m (Maybe Value)
+executeAll :: Monad m => StateT InterpreterState m (Maybe Value)
 executeAll = do
   void . runExceptT . forever $ do
     lift executeOne
@@ -87,7 +82,7 @@ executeAll = do
 
   lastSound <$> get
 
-executeOne :: MonadIO m => StateT InterpreterState m ()
+executeOne :: Monad m => StateT InterpreterState m ()
 executeOne = do
   s <- get
   case atMay (instructions s) (instructionPointer s) of
@@ -99,7 +94,7 @@ executeOne = do
         _        -> jmp 1
 
 
-step :: MonadIO m => Instruction -> StateT InterpreterState m ()
+step :: Monad m => Instruction -> StateT InterpreterState m ()
 
 step (Add reg ref) = do
   x <- getRegisterValue reg
@@ -135,7 +130,7 @@ step (Snd ref) = do
   val <- getReferenceValue ref
   modify (\st -> st { lastSound = Just val })
 
-jmp :: MonadIO m => Value -> StateT InterpreterState m ()
+jmp :: Monad m => Value -> StateT InterpreterState m ()
 jmp (Value offset) = do
   modify updatePointer
   s <- get
@@ -157,13 +152,13 @@ terminate st = st { terminated = True }
 stop :: MonadError e m => e -> m a
 stop = throwError
 
-setRegisterValue :: MonadIO m => RegisterId -> Value -> StateT InterpreterState m ()
+setRegisterValue :: Monad m => RegisterId -> Value -> StateT InterpreterState m ()
 setRegisterValue regId val = modify $ \st ->
   st { registers = Map.insert regId val (registers st) }
 
-getRegisterValue :: MonadIO m => RegisterId -> StateT InterpreterState m Value
+getRegisterValue :: Monad m => RegisterId -> StateT InterpreterState m Value
 getRegisterValue regId = get >>= \st -> return $ Map.findWithDefault 0 regId (registers st)
 
-getReferenceValue :: MonadIO m => Reference -> StateT InterpreterState m Value
+getReferenceValue :: Monad m => Reference -> StateT InterpreterState m Value
 getReferenceValue (RegisterRef r) = getRegisterValue r
 getReferenceValue (ValueRef v)    = return v
