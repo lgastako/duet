@@ -14,7 +14,7 @@ import qualified Duet.RegisterId as RegisterId
 
 data Instruction
   = Add RegisterId Reference
-  | Jgz Reference Reference
+  | Jgz Reference  Reference
   | Mod RegisterId Reference
   | Mul RegisterId Reference
   | Rcv Reference
@@ -33,6 +33,8 @@ parse s = case instr of
   "snd" -> Just $ Snd ref0
   _     -> Nothing
   where
+    -- TODO: This is nasty.  Since `parse` now returns a normal Maybe we should
+    --       be able to Maybe-monad this all away.
     Just instr = headMay pieces
     Just args  = tailMay pieces
 

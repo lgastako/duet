@@ -26,6 +26,8 @@ import           Duet.Reference           ( Reference( RegisterRef
 import           Duet.RegisterId          ( RegisterId )
 import           Duet.Value               ( Value( Value ) )
 
+-- TODO: Eliminate panics
+
 data InterpreterState = InterpreterState
   { lastSound          :: Maybe Value
   , instructions       :: [Instruction]
