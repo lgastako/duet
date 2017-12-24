@@ -1,14 +1,11 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
--- TODO: remove unused pragmas
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoImplicitPrelude     #-}
 {-# LANGUAGE OverloadedStrings     #-}
 module Duet.Interpreter
     ( interpret
-    , interpret1
     ) where
 
+import           Data.List                ( partition )
 import qualified Data.Map.Strict  as Map
 import qualified Data.Text        as Text
 import           Duet.Instruction         ( Instruction( Add
@@ -37,30 +34,20 @@ data InterpreterState = InterpreterState
   , terminated         :: Bool
   } deriving (Eq, Ord, Read, Show)
 
-interpret1 :: Text -> Text
-interpret1 s = run instructions'
+interpret :: Monad m => Text -> m Text
+interpret s = case failures of
+  [] -> execute . catMaybes $ instructions'
+  _  -> panic "Failed to parse some instructions."
   where
-    run           = show . execute1
-    -- TODO: catMaybes is questionable here... really should assert that they all parse?
-    instructions' = catMaybes . map parse . Text.lines $ s
+    (failures, instructions')  = partition null . map parse . Text.lines $ s
 
-interpret :: Text -> IO Text
-interpret s = execute instructions'
-  where
-    -- run           = show . execute
-    -- TODO: catMaybes is questionable here... really should assert that they all parse?
-    instructions' = catMaybes . map parse . Text.lines $ s
-
-execute :: [Instruction] -> IO Text
+execute :: Monad m => [Instruction] -> m Text
 execute ins = do
   (val, _) <- execute' ins
   return . show $ val
 
 execute' :: Monad m => [Instruction] -> m (Maybe Value, InterpreterState)
 execute' ins = runStateT executeAll $ (fromInstructions ins)
-
-execute1 :: [Instruction] -> Maybe Value
-execute1 instructions' = fst . runStateT executeAll $ (fromInstructions instructions')
 
 fromInstructions :: [Instruction] -> InterpreterState
 fromInstructions instructions' = InterpreterState
@@ -76,75 +63,63 @@ executeAll = do
   void . runExceptT . forever $ do
     lift executeOne
 
-    s <- get
-    when (terminated s) $ do
-      stop ()
+    done <- terminated <$> get
+    when done $ stop ()
 
   lastSound <$> get
 
 executeOne :: Monad m => StateT InterpreterState m ()
-executeOne = do
-  s <- get
+executeOne = get >>= \s ->
   case atMay (instructions s) (instructionPointer s) of
-    Nothing -> panic "THE FRONT FELL OFF" -- TODO normal termination
+    Nothing -> panic "ERROR: Invalid instruction pointer dereferenced. Execution aborted."
     Just instruction -> do
       step instruction
       case instruction of
-        Jgz x' _ -> getReferenceValue x' >>= \x -> if x > 0 then return () else jmp 1
+        Jgz x' _ -> referenceValue x' >>= \x -> if x > 0 then return () else jmp 1
         _        -> jmp 1
-
 
 step :: Monad m => Instruction -> StateT InterpreterState m ()
 
 step (Add reg ref) = do
-  x <- getRegisterValue reg
-  y <- getReferenceValue ref
-  setRegisterValue reg (x + y)
+  x <- registerValue reg
+  y <- referenceValue ref
+  setRegister reg (x + y)
 
 step (Jgz ref0 ref1) = do
-  x <- getReferenceValue ref0
-  y <- getReferenceValue ref1
+  x <- referenceValue ref0
+  y <- referenceValue ref1
   if x > 0
     then jmp y
     else return ()
 
 step (Mod reg ref) = do
-  x <- getRegisterValue reg
-  y <- getReferenceValue ref
-  setRegisterValue reg (x `mod` y)
+  x <- registerValue reg
+  y <- referenceValue ref
+  setRegister reg (x `mod` y)
 
 step (Mul reg ref) = do
-  x <- getRegisterValue reg
-  y <- getReferenceValue ref
-  setRegisterValue reg (x * y)
+  x <- registerValue reg
+  y <- referenceValue ref
+  setRegister reg (x * y)
 
-step (Rcv ref) = do
-  x <- getReferenceValue ref
-  when (x /= 0) $ modify terminate
-
-step (Set reg ref) = do
-  val <- getReferenceValue ref
-  setRegisterValue reg val
-
-step (Snd ref) = do
-  val <- getReferenceValue ref
-  modify (\st -> st { lastSound = Just val })
+step (Rcv ref)     = referenceValue ref >>= \x -> when (x /= 0) $ modify terminate
+step (Set reg ref) = referenceValue ref >>= setRegister reg
+step (Snd ref)     = referenceValue ref >>= \x -> modify (\st -> st { lastSound = Just x })
 
 jmp :: Monad m => Value -> StateT InterpreterState m ()
 jmp (Value offset) = do
   modify updatePointer
-  s <- get
-  when (outOfBounds s) $ do
-    modify terminate
+  oob <- not . inBounds <$> get
+  when oob $ modify terminate
   where
     updatePointer :: InterpreterState -> InterpreterState
     updatePointer st = st { instructionPointer = instructionPointer st + offset }
 
-    outOfBounds :: InterpreterState -> Bool
-    outOfBounds st
-      | instructionPointer st < 0                         = True
-      | instructionPointer st >= length (instructions st) = True
-      | otherwise                                         = False
+    inBounds :: InterpreterState -> Bool
+    inBounds st
+      | instructionPointer st < 0                         = False
+      | instructionPointer st >= length (instructions st) = False
+      | otherwise                                         = True
 
 terminate :: InterpreterState -> InterpreterState
 terminate st = st { terminated = True }
@@ -152,13 +127,13 @@ terminate st = st { terminated = True }
 stop :: MonadError e m => e -> m a
 stop = throwError
 
-setRegisterValue :: Monad m => RegisterId -> Value -> StateT InterpreterState m ()
-setRegisterValue regId val = modify $ \st ->
+setRegister :: Monad m => RegisterId -> Value -> StateT InterpreterState m ()
+setRegister regId val = modify $ \st ->
   st { registers = Map.insert regId val (registers st) }
 
-getRegisterValue :: Monad m => RegisterId -> StateT InterpreterState m Value
-getRegisterValue regId = get >>= \st -> return $ Map.findWithDefault 0 regId (registers st)
+registerValue :: Monad m => RegisterId -> StateT InterpreterState m Value
+registerValue regId = get >>= \st -> return $ Map.findWithDefault 0 regId (registers st)
 
-getReferenceValue :: Monad m => Reference -> StateT InterpreterState m Value
-getReferenceValue (RegisterRef r) = getRegisterValue r
-getReferenceValue (ValueRef v)    = return v
+referenceValue :: Monad m => Reference -> StateT InterpreterState m Value
+referenceValue (RegisterRef r) = registerValue r
+referenceValue (ValueRef v)    = return v
