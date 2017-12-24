@@ -6,5 +6,11 @@ module Duet.Main
 import Duet.Interpreter ( interpret )
 import Focus.Prelude
 
+-- main :: IO ()
+-- main = interact interpret
+
 main :: IO ()
-main = interact interpret
+main = do
+  s <- getContents
+  out <- interpret s
+  putLn out

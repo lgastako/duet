@@ -19,6 +19,7 @@ data Instruction
   | Mul RegisterId Reference
   | Rcv Reference
   | Set RegisterId Reference
+  | Snd Reference
   deriving (Eq, Ord, Read, Show)
 
 parse :: Text -> Maybe Instruction
@@ -29,6 +30,7 @@ parse s = case instr of
   "mul" -> Just $ Mul regId ref1
   "rcv" -> Just $ Rcv ref0
   "set" -> Just $ Set regId ref1
+  "snd" -> Just $ Snd ref0
   _     -> Nothing
   where
     Just instr = headMay pieces

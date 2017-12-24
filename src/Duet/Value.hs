@@ -9,7 +9,7 @@ module Duet.Value
 import Duet.Prelude
 
 newtype Value = Value Int
-  deriving (Eq, Num, Ord, Read, Show)
+  deriving (Enum, Eq, Integral, Num, Ord, Read, Real, Show)
 
 parse :: Text -> Maybe Value
 parse = (Value <$>) . readMaybe
